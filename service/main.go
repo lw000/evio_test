@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	protocol "demo/evio_test/pb"
 	"demo/evio_test/pk"
@@ -11,11 +12,13 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type SessionContext struct {
 	uuid uint64
 	buf  *bytes.Buffer
+	bufs []byte
 	conn evio.Conn
 }
 
@@ -39,11 +42,35 @@ func (u *SessionContext) SetUuid(uuid uint64) {
 	u.uuid = uuid
 }
 
-func (u *SessionContext) AddData(data []byte) {
-	u.buf.Write(data)
+func (u *SessionContext) Read(n int) ([]byte, error) {
+	s := bytes.NewReader(u.bufs)
+	br := bufio.NewReader(s)
+
+	tdata, er := br.Peek(n)
+	if er != nil {
+
+	}
+
+	d, er := pk.NewPacketWithData(tdata)
+	if er != nil {
+		log.Println(er)
+		return nil, er
+	}
+
+	log.Println(d)
+
+	return nil, nil
 }
 
-func (u *SessionContext) parse() ([]byte, error) {
+func (u *SessionContext) Parse(data []byte) ([]byte, error) {
+	n, er := u.buf.Write(data)
+	if er != nil {
+		log.Println(er)
+	}
+
+	if n > 0 {
+
+	}
 
 	return nil, nil
 }
@@ -56,17 +83,15 @@ var (
 )
 
 func main() {
-
 	var events evio.Events
 	events.NumLoops = -1
-
 	events.Serving = func(server evio.Server) (action evio.Action) {
 		log.Println("Serving")
 		return
 	}
 
 	events.Opened = func(c evio.Conn) (out []byte, opts evio.Options, action evio.Action) {
-		log.Println("Opened", c.LocalAddr(), c.RemoteAddr())
+		log.Println("Opened", c.RemoteAddr())
 
 		uc := NewUContext()
 		uc.SetUuid(atomic.AddUint64(&uid, 1))
@@ -94,12 +119,13 @@ func main() {
 			log.Println(er)
 		}
 
-		log.Println(uc.Uuid(), req.Msg)
+		log.Println(uc.Uuid(), req.T, req.Msg)
 
 		rep := protocol.ResponseChat{}
 		rep.Msg = req.Msg
-		dd := pk.NewPacket(1, 1, 1)
-		er = dd.EncodeProto(&req)
+		rep.T = time.Now().UnixNano()
+		dd := pk.NewPacket(d.Mid(), d.Sid(), d.RequestId())
+		er = dd.EncodeProto(&rep)
 		if er != nil {
 			log.Println(er)
 		}
@@ -109,7 +135,7 @@ func main() {
 	}
 
 	events.Closed = func(c evio.Conn, err error) (action evio.Action) {
-		log.Println("Closed", c.LocalAddr(), c.RemoteAddr())
+		log.Println("Closed", c.RemoteAddr())
 		return
 	}
 

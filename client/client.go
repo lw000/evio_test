@@ -82,7 +82,7 @@ func (c *Client) Close() error {
 }
 
 func main() {
-	for i := 0; i <= 1; i++ {
+	for i := 0; i <= 0; i++ {
 		c := &Client{}
 		er := c.Open("127.0.0.1:9098")
 		if er != nil {
@@ -97,12 +97,12 @@ func main() {
 				return
 			}
 
-			var res protocol.ResponseChat
-			er = proto.Unmarshal(d.Data(), &res)
+			var rep protocol.ResponseChat
+			er = proto.Unmarshal(d.Data(), &rep)
 			if er != nil {
 				log.Println(er)
 			} else {
-				log.Printf(res.Msg)
+				log.Println(rep.T, rep.Msg)
 			}
 		})
 
@@ -111,6 +111,7 @@ func main() {
 				req := protocol.RequestChat{}
 				req.Uid = "1"
 				req.Msg = strings.Repeat(fmt.Sprintf("%d", i), 10)
+				req.T = time.Now().UnixNano()
 				d := pk.NewPacket(1, 1, 1)
 				er = d.EncodeProto(&req)
 				if er != nil {

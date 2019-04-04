@@ -9,8 +9,7 @@ import (
 )
 
 type Packet struct {
-	ver       uint8
-	ccode     uint32
+	len       uint32
 	mid       uint16
 	sid       uint16
 	requestId uint32
@@ -41,10 +40,7 @@ func NewPacketWithData(data []byte) (*Packet, error) {
 }
 
 func (p *Packet) writeHead(buf *bytes.Buffer) (err error) {
-	if err = binary.Write(buf, binary.LittleEndian, p.ver); err != nil {
-		return err
-	}
-	if err = binary.Write(buf, binary.LittleEndian, p.ccode); err != nil {
+	if err = binary.Write(buf, binary.LittleEndian, p.len); err != nil {
 		return err
 	}
 	if err = binary.Write(buf, binary.LittleEndian, p.mid); err != nil {
@@ -60,10 +56,7 @@ func (p *Packet) writeHead(buf *bytes.Buffer) (err error) {
 }
 
 func (p *Packet) readHead(buf *bytes.Buffer) (err error) {
-	if err = binary.Read(buf, binary.LittleEndian, &p.ver); err != nil {
-		return err
-	}
-	if err = binary.Read(buf, binary.LittleEndian, &p.ccode); err != nil {
+	if err = binary.Read(buf, binary.LittleEndian, &p.len); err != nil {
 		return err
 	}
 	if err = binary.Read(buf, binary.LittleEndian, &p.mid); err != nil {
@@ -81,6 +74,7 @@ func (p *Packet) readHead(buf *bytes.Buffer) (err error) {
 //Encode 编码数据包
 func (p *Packet) encode(data []byte) error {
 	buf := &bytes.Buffer{}
+	p.len = 12 + uint32(len(data))
 	err := p.writeHead(buf)
 	if err != nil {
 		return err
@@ -124,14 +118,6 @@ func (p *Packet) EncodeProto(pb proto.Message) error {
 	return nil
 }
 
-func (p Packet) Ver() uint8 {
-	return p.ver
-}
-
-func (p Packet) Ccode() uint32 {
-	return p.ccode
-}
-
 func (p Packet) Mid() uint16 {
 	return p.mid
 }
@@ -149,5 +135,5 @@ func (p Packet) Data() []byte {
 }
 
 func (p Packet) String() string {
-	return fmt.Sprintf("{ver:%d ccode:%d mid:%d sid:%d requestId:%d datalen:%d}", p.ver, p.ccode, p.mid, p.sid, p.requestId, len(p.data))
+	return fmt.Sprintf("{mid:%d sid:%d requestId:%d datalen:%d}", p.mid, p.sid, p.requestId, len(p.data))
 }
