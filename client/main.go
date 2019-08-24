@@ -7,7 +7,10 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,11 +21,11 @@ type Client struct {
 	onMessage func(data []byte)
 }
 
-func (c *Client) HandleMessage(onMessage func(data []byte)) {
-	c.onMessage = onMessage
+func (c *Client) HandleMessage(fn func(data []byte)) {
+	c.onMessage = fn
 }
 
-func (c *Client) Connected() bool {
+func (c Client) Connected() bool {
 	return c.connected
 }
 
@@ -30,8 +33,10 @@ func (c *Client) Open(address string) error {
 	var er error
 	c.conn, er = net.Dial("tcp", address)
 	if er != nil {
-		log.Panic(er)
+		log.Println(er)
+		return er
 	}
+
 	c.connected = true
 
 	go c.run()
@@ -40,9 +45,7 @@ func (c *Client) Open(address string) error {
 }
 
 func (c *Client) Send(data []byte) error {
-	var n int
-	var err error
-	n, err = c.conn.Write(data)
+	n, err := c.conn.Write(data)
 	if err != nil {
 		log.Printf("connected closed")
 	}
@@ -130,5 +133,9 @@ func main() {
 		go c.run()
 	}
 
-	select {}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	sign := <-c
+	log.Println("signal", sign)
+	signal.Stop(c)
 }

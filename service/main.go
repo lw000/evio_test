@@ -139,16 +139,16 @@ func main() {
 		return
 	}
 
-	//events.Tick = func() (delay time.Duration, action evio.Action) {
-	//	delay = time.Second * time.Duration(1)
-	//	log.Println("Tick", delay)
-	//	return
-	//}
+	// events.Tick = func() (delay time.Duration, action evio.Action) {
+	// 	delay = time.Second * time.Duration(1)
+	// 	log.Println("Tick", delay)
+	// 	return
+	// }
 	//
-	//events.Detached = func(c evio.Conn, rwc io.ReadWriteCloser) (action evio.Action) {
-	//	log.Println("Detached")
-	//	return
-	//}
+	// events.Detached = func(c evio.Conn, rwc io.ReadWriteCloser) (action evio.Action) {
+	// 	log.Println("Detached")
+	// 	return
+	// }
 
 	if err := evio.Serve(events, fmt.Sprintf("%s://:%d", scheme, port)); err != nil {
 		log.Fatal(err)
