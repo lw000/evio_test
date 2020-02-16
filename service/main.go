@@ -4,22 +4,132 @@ package main
 import (
 	"bufio"
 	"bytes"
-	protocol "demo/evio_test/pb"
-	"demo/evio_test/pk"
+	"demo/evio_test/packet"
+	protocol "demo/evio_test/protos"
 	"fmt"
 	"github.com/golang/protobuf/proto"
+	"github.com/judwhite/go-svc/svc"
 	"github.com/tidwall/evio"
+	"io"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
+var (
+	scheme        = "tcp"
+	port          = 9098
+	uid    uint64 = 10000
+	users  sync.Map
+)
+
+type Program struct {
+	events evio.Events
+}
+
+func (pro *Program) Init(env svc.Environment) error {
+	if env.IsWindowsService() {
+
+	} else {
+
+	}
+
+	pro.events.NumLoops = -1
+
+	return nil
+}
+
+// Start is called after Init. This method must be non-blocking.
+func (pro *Program) Start() error {
+	pro.events.Serving = func(server evio.Server) (action evio.Action) {
+		log.Println("Serving")
+		return
+	}
+
+	pro.events.Opened = func(c evio.Conn) (out []byte, opts evio.Options, action evio.Action) {
+		log.Println("Opened", c.RemoteAddr())
+
+		uc := NewUContext()
+		uc.SetUuid(atomic.AddUint64(&uid, 1))
+		uc.SetConn(c)
+
+		c.SetContext(uc)
+
+		users.Store(uc.Uuid(), c)
+		return
+	}
+
+	pro.events.Data = func(c evio.Conn, in []byte) (out []byte, action evio.Action) {
+		ctx := c.Context()
+		uc := ctx.(*SessionContext)
+
+		pk, err := packet.NewPacketWithData(in)
+		if err != nil {
+			log.Println(err)
+			return nil, 0
+		}
+
+		var req protocol.ReqChat
+		err = proto.Unmarshal(pk.Data(), &req)
+		if err != nil {
+			log.Println(err)
+			return nil, 0
+		}
+
+		log.Println(c.RemoteAddr().String(), uc.Uuid(), req.T, req.Msg)
+
+		rep := protocol.AckChat{}
+		rep.Msg = req.Msg
+		rep.T = time.Now().UnixNano()
+		dd := packet.NewPacket(pk.Mid(), pk.Sid(), pk.RequestId())
+		err = dd.EncodeProto(&rep)
+		if err != nil {
+			log.Println(err)
+			return nil, 0
+		}
+		out = dd.Data()
+
+		return nil, 0
+	}
+
+	pro.events.Closed = func(c evio.Conn, err error) (action evio.Action) {
+		log.Println("Closed", c.RemoteAddr())
+		return
+	}
+
+	// events.Tick = func() (delay time.Duration, action evio.Action) {
+	// 	delay = time.Second * time.Duration(1)
+	// 	log.Println("Tick", delay)
+	// 	return
+	// }
+	//
+	pro.events.Detached = func(c evio.Conn, rwc io.ReadWriteCloser) (action evio.Action) {
+		log.Println("Detached")
+		return
+	}
+
+	go func() {
+		if err := evio.Serve(pro.events, fmt.Sprintf("tcp://:%d", 9000), fmt.Sprintf("tcp://:%d", 9001)); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	return nil
+}
+
+// Stop is called in response to syscall.SIGINT, syscall.SIGTERM, or when a
+// Windows Service is stopped.
+func (pro *Program) Stop() error {
+	log.Println("Program quit")
+	return nil
+}
+
 type SessionContext struct {
-	uuid uint64
-	buf  *bytes.Buffer
-	bufs []byte
-	conn evio.Conn
+	uuid   uint64
+	buf    *bytes.Buffer
+	buffer []byte
+	conn   evio.Conn
 }
 
 func NewUContext() *SessionContext {
@@ -43,29 +153,33 @@ func (u *SessionContext) SetUuid(uuid uint64) {
 }
 
 func (u *SessionContext) Read(n int) ([]byte, error) {
-	s := bytes.NewReader(u.bufs)
+	s := bytes.NewReader(u.buffer)
 	br := bufio.NewReader(s)
 
-	tdata, er := br.Peek(n)
-	if er != nil {
-
+	var (
+		err  error
+		data []byte
+	)
+	data, err = br.Peek(n)
+	if err != nil {
+		return nil, err
 	}
 
-	d, er := pk.NewPacketWithData(tdata)
-	if er != nil {
-		log.Println(er)
-		return nil, er
+	var pk *packet.Packet
+	pk, err = packet.NewPacketWithData(data)
+	if err != nil {
+		return nil, err
 	}
 
-	log.Println(d)
+	log.Println(pk)
 
 	return nil, nil
 }
 
 func (u *SessionContext) Parse(data []byte) ([]byte, error) {
-	n, er := u.buf.Write(data)
-	if er != nil {
-		log.Println(er)
+	n, err := u.buf.Write(data)
+	if err != nil {
+		log.Println(err)
 	}
 
 	if n > 0 {
@@ -75,82 +189,9 @@ func (u *SessionContext) Parse(data []byte) ([]byte, error) {
 	return nil, nil
 }
 
-var (
-	scheme        = "tcp"
-	port          = 9098
-	uid    uint64 = 10000
-	users  sync.Map
-)
-
 func main() {
-	var events evio.Events
-	events.NumLoops = -1
-	events.Serving = func(server evio.Server) (action evio.Action) {
-		log.Println("Serving")
-		return
-	}
-
-	events.Opened = func(c evio.Conn) (out []byte, opts evio.Options, action evio.Action) {
-		log.Println("Opened", c.RemoteAddr())
-
-		uc := NewUContext()
-		uc.SetUuid(atomic.AddUint64(&uid, 1))
-		uc.SetConn(c)
-
-		c.SetContext(uc)
-
-		users.Store(uc.Uuid(), c)
-		return
-	}
-
-	events.Data = func(c evio.Conn, in []byte) (out []byte, action evio.Action) {
-		v := c.Context()
-		uc := v.(*SessionContext)
-
-		d, er := pk.NewPacketWithData(in)
-		if er != nil {
-			log.Println(er)
-			return nil, 0
-		}
-
-		var req protocol.RequestChat
-		er = proto.Unmarshal(d.Data(), &req)
-		if er != nil {
-			log.Println(er)
-		}
-
-		log.Println(uc.Uuid(), req.T, req.Msg)
-
-		rep := protocol.ResponseChat{}
-		rep.Msg = req.Msg
-		rep.T = time.Now().UnixNano()
-		dd := pk.NewPacket(d.Mid(), d.Sid(), d.RequestId())
-		er = dd.EncodeProto(&rep)
-		if er != nil {
-			log.Println(er)
-		}
-		out = dd.Data()
-
-		return
-	}
-
-	events.Closed = func(c evio.Conn, err error) (action evio.Action) {
-		log.Println("Closed", c.RemoteAddr())
-		return
-	}
-
-	// events.Tick = func() (delay time.Duration, action evio.Action) {
-	// 	delay = time.Second * time.Duration(1)
-	// 	log.Println("Tick", delay)
-	// 	return
-	// }
-	//
-	// events.Detached = func(c evio.Conn, rwc io.ReadWriteCloser) (action evio.Action) {
-	// 	log.Println("Detached")
-	// 	return
-	// }
-
-	if err := evio.Serve(events, fmt.Sprintf("%s://:%d", scheme, port)); err != nil {
+	pro := &Program{}
+	if err := svc.Run(pro); err != nil {
 		log.Fatal(err)
 	}
 }

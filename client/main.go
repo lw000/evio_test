@@ -1,8 +1,8 @@
 package main
 
 import (
-	"demo/evio_test/pb"
-	"demo/evio_test/pk"
+	"demo/evio_test/packet"
+	"demo/evio_test/protos"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"log"
@@ -30,11 +30,11 @@ func (c Client) Connected() bool {
 }
 
 func (c *Client) Open(address string) error {
-	var er error
-	c.conn, er = net.Dial("tcp", address)
-	if er != nil {
-		log.Println(er)
-		return er
+	var err error
+	c.conn, err = net.Dial("tcp", address)
+	if err != nil {
+		log.Println(err)
+		return err
 	}
 
 	c.connected = true
@@ -85,25 +85,25 @@ func (c *Client) Close() error {
 }
 
 func main() {
-	for i := 0; i <= 0; i++ {
+	for i := 0; i <= 1; i++ {
 		c := &Client{}
-		er := c.Open("127.0.0.1:9098")
-		if er != nil {
-			log.Panic(er)
+		err := c.Open(fmt.Sprintf("%s:%d", "127.0.0.1", 9000+i))
+		if err != nil {
+			log.Fatal(err)
 		}
 
 		c.HandleMessage(func(data []byte) {
-			var d *pk.Packet
-			d, er = pk.NewPacketWithData(data)
-			if er != nil {
-				log.Println(er)
+			var pk *packet.Packet
+			pk, err = packet.NewPacketWithData(data)
+			if err != nil {
+				log.Println(err)
 				return
 			}
 
-			var rep protocol.ResponseChat
-			er = proto.Unmarshal(d.Data(), &rep)
-			if er != nil {
-				log.Println(er)
+			var rep msg.AckChat
+			err = proto.Unmarshal(pk.Data(), &rep)
+			if err != nil {
+				log.Println(err)
 			} else {
 				log.Println(rep.T, rep.Msg)
 			}
@@ -111,21 +111,23 @@ func main() {
 
 		go func() {
 			for {
-				req := protocol.RequestChat{}
+				req := msg.ReqChat{}
 				req.Uid = "1"
 				req.Msg = strings.Repeat(fmt.Sprintf("%d", i), 10)
 				req.T = time.Now().UnixNano()
-				d := pk.NewPacket(1, 1, 1)
-				er = d.EncodeProto(&req)
-				if er != nil {
-					log.Println(er)
-					continue
+				pk := packet.NewPacket(1, 1, 1)
+				err = pk.EncodeProto(&req)
+				if err != nil {
+					log.Println(err)
+					break
 				}
 
-				er = c.Send(d.Data())
-				if er != nil {
-					log.Println(er)
+				err = c.Send(pk.Data())
+				if err != nil {
+					log.Println(err)
+					break
 				}
+
 				time.Sleep(time.Second * time.Duration(1))
 			}
 		}()
